@@ -150,7 +150,7 @@ const MapView = () => {
       watchId = navigator.geolocation.watchPosition(
         (pos) => processLocation(pos.coords.latitude, pos.coords.longitude),
         (err) => {
-           console.log("Falling back to simulated movement...");
+           console.log("GPS signal weak or blocked. Falling back to simulated movement...", err.message);
            setIsSimulating(true);
            if (watchId) navigator.geolocation.clearWatch(watchId);
            
@@ -173,7 +173,7 @@ const MapView = () => {
               processLocation(nLat, nLng);
            }, 2000);
         },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 } // Increased timeout to 15s to allow better GPS lock
       );
     }
 

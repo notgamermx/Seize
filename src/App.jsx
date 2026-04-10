@@ -13,6 +13,7 @@ import WorkoutView from './views/WorkoutView';
 import HistoryView from './views/HistoryView';
 import MapView from './views/MapView';
 import CommunityView from './views/CommunityView';
+import { API_BASE } from './config/constants';
 
 // --- Main Layout ---
 
@@ -22,24 +23,43 @@ export default function App() {
   
   // App-wide state
   const [userData, setUserData] = useState({
-    name: "New Athlete",
+    name: "Athlete",
     level: 1,
     tier: "Beginner",
-    stamina: 80,
+    stamina: 100,
     energy: 100,
     score: 0,
     nextScore: 1000,
-    stats: { steps: "4,200", cals: "350", activeTime: "45m", bpm: "112" }
+    stats: { steps: "0", cals: "0", activeTime: "0m", bpm: "0" }
   });
 
   const [activeSession, setActiveSession] = useState(null);
-  const [activityLogs, setActivityLogs] = useState([
-    { time: "12:00 PM", message: "System Initialized", highlight: false }
-  ]);
-  const [recentLogs, setRecentLogs] = useState([
-    { name: "Barbell Bench Press", type: "Strength", sets: "4 Sets", reps: "8-12 Reps", weight: "135 lbs", date: "Yesterday" }
-  ]);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [recentLogs, setRecentLogs] = useState([]);
 
+  // Fetch true history from DB on login / app load
+  useEffect(() => {
+    if (token) {
+      fetch(`${API_BASE}/api/protected/workout/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.history) {
+           const formattedLogs = data.history.map(item => ({
+              name: item.name,
+              type: item.type,
+              sets: `${item.sets} Sets`,
+              reps: `${item.reps} Reps`,
+              weight: `${item.weight} lbs`,
+              date: new Date(item.created_at).toLocaleDateString()
+           }));
+           setRecentLogs(formattedLogs);
+        }
+      })
+      .catch(err => console.error("Could not fetch history", err));
+    }
+  }, [token]);
   // Session timer hook
   useEffect(() => {
     let interval;
@@ -51,18 +71,41 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeSession?.isActive]);
 
-  const finishSession = () => {
+  const finishSession = async () => {
     if (!activeSession) return;
     
-    // Add to logs
     const totalReps = activeSession.sets.reduce((sum, s) => sum + s.reps, 0);
     const maxWeight = activeSession.sets.reduce((max, s) => Math.max(max, s.weight), 0);
-    
+    const numSets = activeSession.sets.length;
+
+    // Send to Cloudflare DB
+    if (token) {
+       try {
+         await fetch(`${API_BASE}/api/protected/workout/log`, {
+           method: 'POST',
+           headers: { 
+             'Content-Type': 'application/json',
+             'Authorization': `Bearer ${token}` 
+           },
+           body: JSON.stringify({
+             name: activeSession.name,
+             type: activeSession.type,
+             sets: numSets,
+             reps: totalReps,
+             weight: maxWeight
+           })
+         });
+       } catch (err) {
+         console.error("Failed to save to cloud", err);
+       }
+    }
+
+    // Update local UI immediately
     setRecentLogs(prev => [
       {
         name: activeSession.name,
         type: activeSession.type,
-        sets: `${activeSession.sets.length} Sets`,
+        sets: `${numSets} Sets`,
         reps: `${totalReps} Total Reps`,
         weight: `${maxWeight} lbs max`,
         date: "Just Now"
@@ -74,15 +117,14 @@ export default function App() {
       ...prev,
       { 
         time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), 
-        message: `Completed ${activeSession.name} (${activeSession.sets.length} sets)`, 
+        message: `Completed ${activeSession.name} (${numSets} sets)`, 
         highlight: true 
       }
     ]);
 
-    // Update user stats slightly
     setUserData(prev => ({
       ...prev,
-      stamina: Math.max(0, prev.stamina - (activeSession.sets.length * 5)),
+      stamina: Math.max(0, prev.stamina - (numSets * 5)),
       stats: {
         ...prev.stats,
         cals: (parseInt(prev.stats.cals.replace(',','')) + Math.floor(activeSession.elapsed * 0.15)).toString()
@@ -90,7 +132,7 @@ export default function App() {
     }));
 
     setActiveSession(null);
-    setActiveTab('dashboard'); // Redirect to dashboard optionally to see stats
+    setActiveTab('standard'); // Redirect to History to see it!
   };
 
   const navItems = [
