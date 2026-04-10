@@ -6,6 +6,10 @@ import {
 } from 'lucide-react';
 import * as turf from '@turf/turf';
 
+const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1') 
+  ? 'http://127.0.0.1:8787' 
+  : 'https://seize.freefiredond.workers.dev';
+
 // --- Sub-Components ---
 
 const ProgressBar = ({ value, color, label, icon: Icon, subLabel }) => (
@@ -636,7 +640,7 @@ const AuthView = ({ onLogin }) => {
     setError('');
     try {
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const url = `http://127.0.0.1:8787${endpoint}`; // Targets local wrangler dev server
+      const url = `${API_BASE}${endpoint}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
