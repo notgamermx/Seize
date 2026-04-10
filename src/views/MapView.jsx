@@ -11,7 +11,7 @@ const MapView = () => {
   const trackPathRef = useRef([]); // Stores all lat lng pairs [lng, lat] for turf
   
   const [isTracking, setIsTracking] = useState(false);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState('Standby');
   const [distance, setDistance] = useState(0); // in km
   const [areaCaptured, setAreaCaptured] = useState(0); // in sq meters
   const [time, setTime] = useState(0);
@@ -112,16 +112,17 @@ const MapView = () => {
     };
   }, []);
 
-  // Real-time tracking + Simulation Fallback
+  // Real-time tracking mapping
   useEffect(() => {
     let watchId;
-    let simInterval;
     
     if (isTracking && "geolocation" in navigator && window.L) {
       let lastPos = null;
       let pathArray = [...trackPathRef.current];
+      setTrackingStatus("Acquiring GPS...");
 
       const processLocation = (lat, lng) => {
+          setTrackingStatus("Tracking Active");
           const newLatLng = [lat, lng];
           const lObj = window.L.latLng(lat, lng);
           
@@ -150,36 +151,18 @@ const MapView = () => {
       watchId = navigator.geolocation.watchPosition(
         (pos) => processLocation(pos.coords.latitude, pos.coords.longitude),
         (err) => {
-           console.log("GPS signal weak or blocked. Falling back to simulated movement...", err.message);
-           setIsSimulating(true);
-           if (watchId) navigator.geolocation.clearWatch(watchId);
-           
-           let simLat = 9.9312;
-           let simLng = 76.2673;
-           if (lastPos) { simLat = lastPos[0]; simLng = lastPos[1]; } 
-           else if (markerRef.current) {
-             const cLat = markerRef.current.getLatLng();
-             simLat = cLat.lat; simLng = cLat.lng;
-           }
-
-           simInterval = setInterval(() => {
-              // Creating a circular motion to build a cool polygon area!
-              const radius = 0.001; 
-              const elapsed = time + (pathArray.length * 2);
-              const angle = elapsed * 0.1;
-              const nLat = simLat + Math.sin(angle) * (radius * 0.5); // Oval loop
-              const nLng = simLng + Math.cos(angle) * radius;
-              
-              processLocation(nLat, nLng);
-           }, 2000);
+           console.warn("GPS Error:", err.message);
+           if (err.code === 1) setTrackingStatus("Permission Denied");
+           else if (err.code === 2) setTrackingStatus("Signal Lost");
+           else if (err.code === 3) setTrackingStatus("GPS Timeout");
+           else setTrackingStatus("GPS Error");
         },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 } // Increased timeout to 15s to allow better GPS lock
+        { enableHighAccuracy: false, maximumAge: 10000, timeout: 20000 } // Softened constraints so desktop doesn't fail
       );
     }
 
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
-      if (simInterval) clearInterval(simInterval);
     };
   }, [isTracking]);
 
@@ -188,12 +171,16 @@ const MapView = () => {
           setDistance(0);
           setAreaCaptured(0);
           setTime(0);
+          setTrackingStatus("Standby");
           trackPathRef.current = [];
           if (pathRef.current) pathRef.current.setLatLngs([]);
           if (polygonRef.current) polygonRef.current.setLatLngs([]);
+      } else {
+          setTrackingStatus("Standby");
       }
       setIsTracking(!isTracking);
   };
+
 
   const formatTime = (seconds) => {
      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -210,15 +197,15 @@ const MapView = () => {
         {/* UI Overlays */}
         <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none z-10">
           <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 p-3 rounded-xl pointer-events-auto shadow-lg">
-            <div className={`text-[10px] font-bold uppercase flex items-center gap-2 mb-1 ${isTracking ? (isSimulating ? 'text-amber-400' : 'text-lime-400') : 'text-slate-500'}`}>
-              <span className={`w-2 h-2 rounded-full ${isTracking ? (isSimulating ? 'bg-amber-400 animate-pulse' : 'bg-lime-400 animate-pulse') : 'bg-slate-700'}`}></span> 
+            <div className={`text-[10px] font-bold uppercase flex items-center gap-2 mb-1 ${isTracking ? 'text-lime-400' : 'text-slate-500'}`}>
+              <span className={`w-2 h-2 rounded-full ${isTracking ? 'bg-lime-400 animate-pulse' : 'bg-slate-700'}`}></span> 
               Tracking Status
             </div>
             <div className={`text-sm font-black uppercase tracking-wider ${isTracking ? 'text-white' : 'text-slate-500'}`}>
-                {isTracking ? (isSimulating ? 'GPS Blocked: Simulating' : 'Route Tracking Active') : 'Ready to Track'}
+                {isTracking ? trackingStatus : 'Ready to Track'}
             </div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2">
-                 <div className={`h-full rounded-full transition-all ${isTracking ? (isSimulating ? 'bg-amber-500' : 'bg-lime-500') + ' w-[100%] animate-pulse' : 'bg-slate-700 w-[0%]'}`}></div>
+                 <div className={`h-full rounded-full transition-all ${isTracking ? 'bg-lime-500 w-[100%] animate-pulse' : 'bg-slate-700 w-[0%]'}`}></div>
             </div>
           </div>
           
